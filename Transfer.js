@@ -66,12 +66,17 @@ function transferFiles() {
           // If in Folder Mode, add subfolders to the queue
           if (ROOT_FOLDER_ID && item.mimeType === 'application/vnd.google-apps.folder') {
             folderQueue.push(item.id);
+            console.log('Folder: ' + item.name);
+          } else {
+            console.log(item.name);
           }
 
           // Check ownership (always required to avoid API errors)
           const isOwner = item.owners && item.owners.some(o => o.me === true);
+          console.log('  ...' + item.owners[0].emailAddress);
           if (isOwner) {
             try {
+              console.log('  ...transferring');
               transferItemRetry(item.id, NEW_OWNER_EMAIL);
               stats.sent++;
               Utilities.sleep(400); // 2025 Throttle
@@ -136,8 +141,8 @@ function transferItemRetry(fileId, email) {
 function loadTransferState() {
   const props = PropertiesService.getScriptProperties();
   return {
-    token: props.getProperty('TRANSFER_PAGE_TOKEN'),
-    queue: JSON.parse(props.getProperty('TRANSFER_FOLDER_QUEUE') || "[]"),
+    pageToken: props.getProperty('TRANSFER_PAGE_TOKEN'),
+    folderQueue: JSON.parse(props.getProperty('TRANSFER_FOLDER_QUEUE') || "[]"),
     stats: {
       processed: parseInt(props.getProperty('TRANSFER_PROCESSED') || '0'),
       sent: parseInt(props.getProperty('TRANSFER_SENT') || '0')
@@ -145,9 +150,9 @@ function loadTransferState() {
   };
 }
 
-function saveTransferState(token, folderQueue, stats) {
+function saveTransferState(pageToken, folderQueue, stats) {
   const props = PropertiesService.getScriptProperties();
-  if (token) props.setProperty('TRANSFER_PAGE_TOKEN', token);
+  if (pageToken) props.setProperty('TRANSFER_PAGE_TOKEN', pageToken);
   props.setProperty('TRANSFER_FOLDER_QUEUE', JSON.stringify(folderQueue));
   props.setProperty('TRANSFER_PROCESSED', stats.processed.toString());
   props.setProperty('TRANSFER_SENT', stats.sent.toString());

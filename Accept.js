@@ -48,13 +48,14 @@ function acceptFiles() {
     let query = "trashed = false";
     if (ROOT_FOLDER_ID && folderQueue.length > 0) {
       query = `'${folderQueue[0]}' in parents and trashed = false`;
+      console.log('query: ' + query);
     }
 
     try {
       const result = Drive.Files.list({
         q: query,
         fields: "nextPageToken, files(id, name, mimeType, permissions(id, emailAddress, role))",
-        pageToken: pageToken,
+        pageToken: pageToken || null,
         pageSize: 60
       });
 
