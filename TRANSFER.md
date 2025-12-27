@@ -18,7 +18,7 @@ To set these up:
 2. Scroll down to **Script Properties**.
 3. Add these keys:
    - `NEW_OWNER_EMAIL`: The recipient email (e.g., `user@example.com`).
-   - `ROOT_FOLDER_ID` (optional): The folder ID to scope transfers. Leave blank for a full-account transfer.
+   - `TRANSFER_ROOT_FOLDER_ID` (optional): The folder ID to scope transfers. Leave blank for a full-account transfer.
 
 ## Installation
 
@@ -34,8 +34,8 @@ To set these up:
 
 ## Operational Logic
 
-- **Global mode:** If `ROOT_FOLDER_ID` is not set, the script finds every file you own anywhere in Drive.
-- **Recursive mode:** If `ROOT_FOLDER_ID` is provided, the script performs a breadth‑first traversal: processes the folder, discovers subfolders, and queues them for sequential processing.
+- **Global mode:** If `TRANSFER_ROOT_FOLDER_ID` is not set, the script finds every file you own anywhere in Drive.
+- **Recursive mode:** If `TRANSFER_ROOT_FOLDER_ID` is provided, the script performs a breadth‑first traversal: processes the folder, discovers subfolders, and queues them for sequential processing.
 - **Throttling:** ~400ms delay plus API overhead keeps under the 10 requests/second rate limit.
 
 ## Daily Quotas & Cooldowns

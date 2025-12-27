@@ -9,9 +9,9 @@ function transferFiles() {
     console.error("ERROR: NEW_OWNER_EMAIL property is not set.");
     return;
   }
-  const ROOT_FOLDER_ID = props.getProperty('ROOT_FOLDER_ID'); // Optional: limit to a specific folder
+  const ROOT_FOLDER_ID = props.getProperty('TRANSFER_ROOT_FOLDER_ID'); // Optional: limit to a specific folder
   if (!ROOT_FOLDER_ID) {
-    console.info("INFO: ROOT_FOLDER_ID property is not set.");
+    console.info("INFO: TRANSFER_ROOT_FOLDER_ID property is not set.");
   }
   // 1. Load saved state
   let { pageToken, folderQueue, stats } = loadTransferState();
@@ -63,6 +63,12 @@ function transferFiles() {
       const items = result.files;
       if (items && items.length > 0) {
         for (const item of items) {
+          // 1. SKIP SHORTCUTS: They cannot be transferred
+          if (item.mimeType === 'application/vnd.google-apps.shortcut') {
+            console.info(`Skipping shortcut: ${item.name}`);
+            continue; 
+          }
+  
           // If in Folder Mode, add subfolders to the queue
           if (ROOT_FOLDER_ID && item.mimeType === 'application/vnd.google-apps.folder') {
             folderQueue.push(item.id);

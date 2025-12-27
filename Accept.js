@@ -54,7 +54,7 @@ function acceptFiles() {
     try {
       const result = Drive.Files.list({
         q: query,
-        fields: "nextPageToken, files(id, name, mimeType, permissions(id, emailAddress, role))",
+        fields: "nextPageToken, files(id, name, mimeType, capabilities(canAcceptOwnership), permissions(id, emailAddress, role))",
         pageToken: pageToken || null,
         pageSize: 60
       });
@@ -74,16 +74,16 @@ function acceptFiles() {
             console.log(file.name);
           }
 
-          if (!file.permissions) continue;
-          const myPerm = file.permissions.find(p => p.emailAddress === myEmail);
-
-          if (myPerm && myPerm.role === 'writer') {
-            console.log('  ... attempting');
-            currentBatch.push({
-              fileId: file.id,
-              permissionId: myPerm.id,
-              name: file.name
-            });
+          if (file.capabilities && file.capabilities.canAcceptOwnership === true) {
+            const myPerm = file.permissions.find(p => p.emailAddress === myEmail);
+            if (myPerm) {
+              console.log('  ...accepting');
+              currentBatch.push({
+                fileId: file.id,
+                permissionId: myPerm.id,
+                name: file.name
+              });
+            }
           }
 
           if (currentBatch.length === BATCH_SIZE || (i === files.length - 1 && currentBatch.length > 0)) {
