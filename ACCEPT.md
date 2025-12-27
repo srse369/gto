@@ -1,6 +1,6 @@
 # Google Drive Bulk Ownership — Accept
 
-Part of the Google Drive Ownership Transfer toolkit.
+Part of the Google Drive Ownership Transfer toolkit. Works only with personal accounts.
 
 When ownership is transferred to you in Google Drive, items enter a "pending" state. They do not officially belong to you—and do not count against your storage—until you accept them. This guide covers the script that automates accepting thousands of pending transfers, handling subfolders, timeouts, and daily quotas.
 

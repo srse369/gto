@@ -122,11 +122,25 @@ function transferItemRetry(fileId, email) {
 
   while (retries < maxRetries) {
     try {
-      return Drive.Permissions.create(
+      Drive.Permissions.create(
         { role: 'writer', type: 'user', emailAddress: email },
         fileId,
-        { pendingOwner: true, sendNotificationEmail: true }
+        { sendNotificationEmail: true }
       );
+
+      const permissions = Drive.Permissions.list(fileId, {
+        fields: "permissions(id, emailAddress, role, type)"
+      }).permissions;
+      const targetPerm = permissions.find(p => p.emailAddress === email);
+
+      if (targetPerm) {
+        return Drive.Permissions.update(
+          { role: 'writer', pendingOwner: true },
+          fileId,
+          targetPerm.id,
+          { sendNotificationEmail: true } // THIS sends the required consent email
+        );
+      }
     } catch (e) {
       if (e.message.includes("Internal Error") && retries < maxRetries - 1) {
         retries++;

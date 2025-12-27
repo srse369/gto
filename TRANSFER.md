@@ -1,6 +1,6 @@
 # Google Drive Bulk Ownership — Transfer
 
-Part of the Google Drive Ownership Transfer toolkit.
+Part of the Google Drive Ownership Transfer toolkit. Works only with personal accounts.
 
 This documentation covers the setup and operation of the Resilient Ownership Transfer script, designed to handle 10,000+ items across an entire Drive or within a specific folder hierarchy.
 
