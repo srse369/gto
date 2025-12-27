@@ -1,73 +1,64 @@
-# Google Drive Ownership Transfer Automation - Transfer
+# Google Drive Bulk Ownership — Transfer
 
 Part of the Google Drive Ownership Transfer toolkit.
 
-This guide describes a Google Apps Script that helps offload a large volume of files (10,000+) to another account. Because Google Drive lacks a "Transfer All" button, the script iterates your "My Drive," identifies files you own, and invites the target email to take ownership.
+This documentation covers the setup and operation of the Resilient Ownership Transfer script, designed to handle 10,000+ items across an entire Drive or within a specific folder hierarchy.
 
-## How It Works
+## Overview
 
-- **Targeted search:** Finds only files where you are the current owner (`'me'` in `owners`).
-- **Batch requests:** Sends ownership transfer invitations in batches of 50.
-- **Resilience:** Persists progress with `PropertiesService`; resumes exactly where it left off if it hits the ~6-minute execution limit.
-- **Safety throttling:** Adds a ~250ms delay between files to reduce rate-limit errors.
+This script automates inviting a new owner to files you currently own. It is designed to run in the background via time-driven triggers, handling large migrations that exceed Google's ~6-minute execution limit and daily transfer quotas.
 
-## Prerequisites
+## Configuration (Script Properties)
 
-- **Same-domain requirement (2025):** Ownership transfers generally work only between accounts in the same organization (e.g., both `@company.com`) or between two personal `@gmail.com` accounts.
-- **Enable Drive API v3 in Apps Script:**
-  - Open your Apps Script project.
-  - Click **Services (+)** in the left sidebar.
-  - Add **Drive API** and ensure the version is **v3**.
+Instead of hardcoding sensitive emails or folder IDs, the script reads configuration from Script Properties.
 
-## Setup Instructions
+To set these up:
 
-### Step 1: Configure the script
+1. In the Apps Script editor, click **Settings** (gear icon) on the left.
+2. Scroll down to **Script Properties**.
+3. Add these keys:
+   - `NEW_OWNER_EMAIL`: The recipient email (e.g., `user@example.com`).
+   - `ROOT_FOLDER_ID` (optional): The folder ID to scope transfers. Leave blank for a full-account transfer.
 
-Replace the placeholder email in the code with the intended recipient:
+## Installation
 
-```javascript
-const NEW_OWNER_EMAIL = 'target-email@example.com';
-```
+1. **Enable Drive API v3:** Click the **+** next to **Services** in the sidebar, select **Drive API**, ensure version **v3**, then click **Add**.
+2. **Authorize:** Run `transferAllOwnedFiles` once manually and grant permissions.
+3. **Set a trigger:**
+   - Open **Triggers** (clock icon).
+   - Click **+ Add Trigger**.
+   - Function: `transferAllOwnedFiles`
+   - Event: **Time-driven**
+   - Type: **Minutes timer**
+   - Interval: **Every 30 minutes**
 
-### Step 2: Initial authorization
+## Operational Logic
 
-- In the toolbar, select `transferAllOwnedFiles` and click **Run**.
-- Click **Review Permissions** and **Allow**.
-- The script starts; for very large drives it will stop after ~5.5 minutes due to quotas and resume on the next run.
+- **Global mode:** If `ROOT_FOLDER_ID` is not set, the script finds every file you own anywhere in Drive.
+- **Recursive mode:** If `ROOT_FOLDER_ID` is provided, the script performs a breadth‑first traversal: processes the folder, discovers subfolders, and queues them for sequential processing.
+- **Throttling:** ~400ms delay plus API overhead keeps under the 10 requests/second rate limit.
 
-### Step 3: Schedule the automation (trigger)
+## Daily Quotas & Cooldowns
 
-To process all files without repeatedly clicking **Run**:
+- **Limits:** Google typically enforces ~2,500 items or ~750GB per 24‑hour period for ownership transfers.
+- **If quota reached:** The script logs `QUOTA LIMIT` and stops.
+- **Automatic resume:** Progress is saved; 30‑minute triggers idle until the 24‑hour window resets, then the next run resumes automatically.
 
-1. Open **Triggers** (alarm clock icon) in the left sidebar.
-2. Click **+ Add Trigger**.
-3. Choose function: `transferAllOwnedFiles`.
-4. Set **Event source** to **Time-driven**.
-5. Set **Type** to **Minutes timer**.
-6. Set **Interval** to **Every 30 minutes**.
-7. Click **Save**.
+## Recipient Instructions
 
-## Recipient Actions
+The recipient will receive notifications for transfers and must accept them to finalize ownership. For bulk acceptance, see [ACCEPT.md](ACCEPT.md).
 
-When the script runs, the recipient will see many "Pending" ownership requests. They should use the acceptance helper described in [ACCEPT.md](ACCEPT.md) to finalize ownership transfers.
+## Maintenance
 
-Note: If requests are not accepted, you remain the owner and files continue counting against your storage quota.
-
-## Troubleshooting & Quotas
-
-| Issue | Cause | Solution |
-| --- | --- | --- |
-| "Sharing quota exceeded" | Google's daily limit (approx. 2,500 transfers or 750GB) was reached. | Wait ~24 hours; the trigger will resume automatically. |
-| "Cross-domain transfer not supported" | Attempting transfers from Business → Personal or across organizations. | Google blocks this; copy files instead of transferring ownership. |
-| Script stops but says "Success" | No more files owned by you were found. | Check Drive; pending transfer invitations indicate work is complete. |
-
-## Reset Progress
-
-If you want the script to forget progress and start over from the first file, run:
+To restart from scratch or clear a stuck queue, run:
 
 ```javascript
-function resetProgress() {
-  PropertiesService.getScriptProperties().deleteAllProperties();
-  console.log('Progress reset. Next run starts from file #1.');
+function clearAllProgress() {
+  const props = PropertiesService.getScriptProperties();
+  props.deleteProperty('TRANSFER_PAGE_TOKEN');
+  props.deleteProperty('TRANSFER_FOLDER_QUEUE');
+  props.deleteProperty('TRANSFER_PROCESSED');
+  props.deleteProperty('TRANSFER_SENT');
+  console.log('Memory cleared. Ready for a fresh run.');
 }
 ```

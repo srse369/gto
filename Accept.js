@@ -1,46 +1,61 @@
 /**
- * Processes ownership transfers in batches with a 6-minute timeout protection.
- * Optimized for 10,000+ files. Use a Time-Driven Trigger to run this every 15-30 mins.
+ * Processes ownership transfers for a specific folder and all its subfolders.
+ * Set ACCEPT_ROOT_FOLDER_ID in Script Properties to limit scope, or leave empty for Global.
  */
-function batchAcceptOwnership() {
+function acceptFiles() {
   const startTime = new Date().getTime();
   const myEmail = Session.getActiveUser().getEmail();
   const props = PropertiesService.getScriptProperties();
-  const suspendUntil = props.getProperty('SUSPEND_UNTIL');  
-  
-  // 0. Check if we are currently in a quota cooldown period
+
+  // CONFIG: Get Root Folder from Properties (Optional)
+  const ROOT_FOLDER_ID = props.getProperty('ACCEPT_ROOT_FOLDER_ID');
+  const suspendUntil = props.getProperty('SUSPEND_UNTIL');
+
   if (suspendUntil && new Date().getTime() < parseInt(suspendUntil)) {
     console.log("QUOTA COOL-DOWN: Script is paused until " + new Date(parseInt(suspendUntil)).toLocaleString());
-    return; 
+    return;
   }
 
   // 1. Load saved state from previous run
-  let pageToken = props.getProperty('LAST_PAGE_TOKEN');
-  let stats = {
-    totalProcessed: parseInt(props.getProperty('STATS_PROCESSED') || '0'),
-    totalAccepted: parseInt(props.getProperty('STATS_ACCEPTED') || '0'),
-    totalErrors: parseInt(props.getProperty('STATS_ERRORS') || '0')
-  };
-  
-  const BATCH_SIZE = 20;
-  const TIMEOUT_LIMIT = 5.5 * 60 * 1000; // 5.5 minutes safety exit
+  let pageToken = props.getProperty('ACCEPT_PAGE_TOKEN') || null;
+  // Queue only used if ROOT_FOLDER_ID is specified
+  let folderQueue = JSON.parse(props.getProperty('ACCEPT_FOLDER_QUEUE') || "[]");
 
-  console.log(`Resuming process. Already Accepted: ${stats.totalAccepted}`);
+  let stats = {
+    totalProcessed: parseInt(props.getProperty('ACCEPT_STATS_PROCESSED') || '0'),
+    totalAccepted: parseInt(props.getProperty('ACCEPT_STATS_ACCEPTED') || '0'),
+    totalErrors: parseInt(props.getProperty('ACCEPT_STATS_ERRORS') || '0')
+  };
+
+  // Seed queue if starting fresh in Recursive Mode
+  if (!pageToken && folderQueue.length === 0 && ROOT_FOLDER_ID) {
+    folderQueue.push(ROOT_FOLDER_ID);
+  }
+
+  const BATCH_SIZE = 20;
+  const TIMEOUT_LIMIT = 5.5 * 60 * 1000;
+
+  console.log(`Mode: ${ROOT_FOLDER_ID ? "Recursive Folder" : "Global Drive"}. Sent: ${stats.totalAccepted}`);
 
   do {
-    // 2. Check for Execution Time Limit
     if (new Date().getTime() - startTime > TIMEOUT_LIMIT) {
-      saveState(pageToken, stats);
-      console.log(`TIMEOUT REACHED: Saved progress at page token. Will resume on next trigger.`);
-      return; 
+      saveAcceptState(pageToken, folderQueue, stats);
+      console.log(`TIMEOUT: Progress saved. Will resume on next trigger.`);
+      return;
+    }
+
+    // Determine Query
+    let query = "trashed = false";
+    if (ROOT_FOLDER_ID && folderQueue.length > 0) {
+      query = `'${folderQueue[0]}' in parents and trashed = false`;
     }
 
     try {
       const result = Drive.Files.list({
-        q: "trashed = false", 
-        fields: "nextPageToken, files(id, name, permissions(id, emailAddress, role))",
+        q: query,
+        fields: "nextPageToken, files(id, name, mimeType, permissions(id, emailAddress, role))",
         pageToken: pageToken,
-        pageSize: 60 
+        pageSize: 60
       });
 
       const files = result.files;
@@ -49,10 +64,15 @@ function batchAcceptOwnership() {
 
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
-          if (!file.permissions) continue;
 
+          // If in Recursive Mode, add subfolders to the queue
+          if (ROOT_FOLDER_ID && file.mimeType === 'application/vnd.google-apps.folder') {
+            folderQueue.push(file.id);
+          }
+
+          if (!file.permissions) continue;
           const myPerm = file.permissions.find(p => p.emailAddress === myEmail);
-          
+
           if (myPerm && myPerm.role === 'writer') {
             currentBatch.push({
               fileId: file.id,
@@ -61,39 +81,41 @@ function batchAcceptOwnership() {
             });
           }
 
-          // Process batch once it hits BATCH_SIZE or end of the page
           if (currentBatch.length === BATCH_SIZE || (i === files.length - 1 && currentBatch.length > 0)) {
             processBatch(currentBatch, stats);
-            currentBatch = []; // Reset batch
-
-            console.log(`STATS: Processed: ${stats.totalProcessed} | Accepted: ${stats.totalAccepted}`);
-            
-            // Safety throttle between batches
-            Utilities.sleep(500); 
+            currentBatch = [];
+            Utilities.sleep(500);
           }
         }
       }
+
       pageToken = result.nextPageToken;
-      props.setProperty('LAST_PAGE_TOKEN', pageToken || ""); // Update token after every successful page
+
+      // Handle Folder Transitions in Recursive Mode
+      if (!pageToken && ROOT_FOLDER_ID) {
+        folderQueue.shift(); // Remove finished folder
+        if (folderQueue.length === 0) break; // Entire tree finished
+        pageToken = null; // Start next folder from page 1
+      }
 
     } catch (err) {
       if (err.message === "QUOTA_REACHED") {
-        console.error("QUOTA STOP: Daily limit reached. Script will pause for 24h.");
-        saveState(pageToken, stats);
-        return; 
+        saveAcceptState(pageToken, folderQueue, stats);
+        return;
       }
       console.error("API ERROR: " + err.message);
-      saveState(pageToken, stats);
+      saveAcceptState(pageToken, folderQueue, stats);
       return;
     }
-  } while (pageToken);
+  } while (pageToken || (ROOT_FOLDER_ID && folderQueue.length > 0));
 
-  // 3. Cleanup ONLY state properties, keep SUSPEND_UNTIL if it exists
-  props.deleteProperty('LAST_PAGE_TOKEN');
-  props.deleteProperty('STATS_PROCESSED');
-  props.deleteProperty('STATS_ACCEPTED');
-  props.deleteProperty('STATS_ERRORS');
-  console.log(`SUCCESS: All items processed. Final Accepted: ${stats.totalAccepted}`);
+  // 3. Cleanup
+  props.deleteProperty('ACCEPT_PAGE_TOKEN');
+  props.deleteProperty('ACCEPT_FOLDER_QUEUE');
+  props.deleteProperty('ACCEPT_STATS_PROCESSED');
+  props.deleteProperty('ACCEPT_STATS_ACCEPTED');
+  props.deleteProperty('ACCEPT_STATS_ERRORS');
+  console.log(`SUCCESS: Process complete. Final Accepted: ${stats.totalAccepted}`);
 }
 
 /**
@@ -103,9 +125,9 @@ function processBatch(batch, stats) {
   for (const item of batch) {
     try {
       Drive.Permissions.update(
-        { role: 'owner' }, 
-        item.fileId, 
-        item.permissionId, 
+        { role: 'owner' },
+        item.fileId,
+        item.permissionId,
         { transferOwnership: true }
       );
       stats.totalAccepted += 1;
@@ -116,7 +138,7 @@ function processBatch(batch, stats) {
         const twentyFourHours = 24 * 60 * 60 * 1000;
         const resumeTime = new Date().getTime() + twentyFourHours;
         PropertiesService.getScriptProperties().setProperty('SUSPEND_UNTIL', resumeTime.toString());
-        throw new Error("QUOTA_REACHED"); 
+        throw new Error("QUOTA_REACHED");
       }
       stats.totalErrors += 1;
       console.warn(`Skipped ${item.name}: ${e.message}`);
@@ -128,11 +150,11 @@ function processBatch(batch, stats) {
 /**
  * Persists the current state to PropertiesService.
  */
-function saveState(token, stats) {
+function saveAcceptState(token, queue, stats) {
   const props = PropertiesService.getScriptProperties();
-  if (token) props.setProperty('LAST_PAGE_TOKEN', token);
-  props.setProperty('STATS_PROCESSED', stats.totalProcessed.toString());
-  props.setProperty('STATS_ACCEPTED', stats.totalAccepted.toString());
-  props.setProperty('STATS_ERRORS', stats.totalErrors.toString());
+  if (token) props.setProperty('ACCEPT_PAGE_TOKEN', token);
+  props.setProperty('ACCEPT_FOLDER_QUEUE', JSON.stringify(queue));
+  props.setProperty('ACCEPT_STATS_PROCESSED', stats.totalProcessed.toString());
+  props.setProperty('ACCEPT_STATS_ACCEPTED', stats.totalAccepted.toString());
+  props.setProperty('ACCEPT_STATS_ERRORS', stats.totalErrors.toString());
 }
-
