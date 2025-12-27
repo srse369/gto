@@ -14,7 +14,7 @@ function transferFiles() {
     console.info("INFO: ROOT_FOLDER_ID property is not set.");
   }
   // 1. Load saved state
-  const { pageToken, folderQueue, stats } = loadTransferState();
+  let { pageToken, folderQueue, stats } = loadTransferState();
 
   const startTime = new Date().getTime();
   const TIMEOUT_LIMIT = 5.5 * 60 * 1000; // 5.5 minute safety exit
@@ -113,7 +113,7 @@ function transferFiles() {
 
 function transferItemRetry(fileId, email) {
   let retries = 0;
-  const maxRetries = 3;
+  const maxRetries = 1;
 
   while (retries < maxRetries) {
     try {

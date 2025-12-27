@@ -35,7 +35,7 @@ function acceptFiles() {
   const BATCH_SIZE = 20;
   const TIMEOUT_LIMIT = 5.5 * 60 * 1000;
 
-  console.log(`Mode: ${ROOT_FOLDER_ID ? "Recursive Folder" : "Global Drive"}. Sent: ${stats.totalAccepted}`);
+  console.log(`Mode: ${ROOT_FOLDER_ID ? "Recursive Folder" : "Global Drive"}. Accepted: ${stats.totalAccepted}`);
 
   do {
     if (new Date().getTime() - startTime > TIMEOUT_LIMIT) {
@@ -68,12 +68,16 @@ function acceptFiles() {
           // If in Recursive Mode, add subfolders to the queue
           if (ROOT_FOLDER_ID && file.mimeType === 'application/vnd.google-apps.folder') {
             folderQueue.push(file.id);
+            console.log('Folder: ' + file.name);
+          } else {
+            console.log(file.name);
           }
 
           if (!file.permissions) continue;
           const myPerm = file.permissions.find(p => p.emailAddress === myEmail);
 
           if (myPerm && myPerm.role === 'writer') {
+            console.log('  ... attempting');
             currentBatch.push({
               fileId: file.id,
               permissionId: myPerm.id,
