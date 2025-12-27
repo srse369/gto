@@ -118,9 +118,9 @@ function transferItemRetry(fileId, email) {
   while (retries < maxRetries) {
     try {
       return Drive.Permissions.create(
-        { role: 'owner', type: 'user', emailAddress: email },
+        { role: 'writer', type: 'user', emailAddress: email },
         fileId,
-        { transferOwnership: true, sendNotificationEmail: true }
+        { pendingOwner: true, sendNotificationEmail: true }
       );
     } catch (e) {
       if (e.message.includes("Internal Error") && retries < maxRetries - 1) {
